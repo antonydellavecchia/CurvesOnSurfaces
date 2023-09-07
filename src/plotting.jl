@@ -1,6 +1,17 @@
 # defines the global precision
 CC = AcbField(62)
 
+function get_arc(g::Geodesic)
+    c = get_circle_center(g)
+    p1_c = g.p1 - c
+    p2_c = g.p2 - c
+    r = abs(p1_c)
+    theta1 = imag(log(CC(p1_c // r)))
+    theta2 = imag(log(CC(p2_c // r)))
+    return r, (theta1, theta2)
+end
+
+
 # Define the @recipe function for HyperbolicPlane
 @recipe function f(H::HyperbolicPlane)
     return Plots.partialcircle(0, 2π, 100, 1)
@@ -12,9 +23,7 @@ end
 end
 
 @recipe function f(q::qqbar)
-    @series begin
-        [CC(q)]
-    end
+    return [CC(q)]
 end
 
 @recipe function f(v::Vector{qqbar})
@@ -35,8 +44,8 @@ end
     r, (θ1, θ2) = get_arc(g)
 
     RR = ArbField(64)
-    θ1_f = convert(Float64, RR(θ1)) * π
-    θ2_f = convert(Float64, RR(θ2)) * π
+    θ1_f = convert(Float64, θ1)
+    θ2_f = convert(Float64, θ2)
     
     if θ1_f < 0
         θ1_f += 2 * π
@@ -68,10 +77,12 @@ end
         reduce(vcat, D.geodesics)
     end
 
-    #for A in D.deck_transformations
-    #    @series begin
-    #        gs = [on_geodesic(g, A) for g in D.geodesics]
-    #        points = [[g.p1, g.p2] for g in gs]
-    #    end
-    #end
+    for (A, A_inv) in D.deck_transformations
+        @series begin
+            [on_geodesic(g, A) for g in D.geodesics]
+        end
+        @series begin
+            [on_geodesic(g, A_inv) for g in D.geodesics]
+        end
+    end
 end

@@ -24,9 +24,11 @@ function get_moebius(p_maps::Vector{<:PointMapType})
     M = matrix(QQBar, mat)
     dim, gen = kernel(M)
     @req dim == 1 "cannot find moebius transformation"
+
     
-    A = [gen[1] gen[2]; gen[3] gen[4]]
-    return A
+    A = matrix(QQBar, [gen[1] gen[2]; gen[3] gen[4]])
+    sqrt_det = sqrt(det(A))
+    return matrix(QQBar, (1 // sqrt_det) .* A)
 end
 
 ################################################################################
@@ -36,6 +38,17 @@ mutable struct Geodesic{S <: FieldElem}
     # points should be ordered counter clockwise
     p1::S
     p2::S
+end
+
+function geodesic(p1::qqbar, p2::qqbar)
+
+    return Geodesic(p1, p2)
+    theta1 = log_pi_i(p1 // abs(p1))
+    theta2 = log_pi_i(p2 // abs(p2))
+    
+    if abs(theta1 - theta2) > QQBar(1)
+        print(theta1, " ", theta2)
+    end
 end
 
 function get_circle_center(g::Geodesic)
@@ -55,26 +68,23 @@ function get_circle_center(g::Geodesic)
     return result[1] + i * result[2]
 end
 
-function get_arc(g::Geodesic)
-    # returns (radius, (angle1, angle2))
-    c = get_circle_center(g)
-    p1_c = g.p1 - c
-    p2_c = g.p2 - c
-    r = abs(p1_c)
-            
-    return r, (log_pi_i(p1_c // r), log_pi_i(p2_c // r))
+function on_point(q::qqbar, M::MatElem{qqbar})
+    z = (M[1, 1] * q + M[1, 2]) // (M[2, 1] * q + M[2, 2])
+    println(abs(z), "***", abs(q))
+
+    if isone(abs(q))
+        
+        @req isone(abs(z)) "point was moved off boundary"
+    end
+    return z
 end
 
-function on_point(q::qqbar, M::Matrix{qqbar})
-    return (M[1, 1] * q + M[1, 2]) // (M[2, 1] * q + M[2, 2])
-end
-
-function on_geodesic(g::Geodesic{qqbar}, M::Matrix{qqbar}; copy::Bool = false)
+function on_geodesic(g::Geodesic{qqbar}, M::MatElem{qqbar}; copy::Bool = true)
     p1 = on_point(g.p1, M)
     p2 = on_point(g.p2, M)
 
     if copy
-        return Geodesic(p1, p2)
+        return geodesic(p1, p2)
     end
     g.p1 = p1
     g.p2 = p2
@@ -84,7 +94,7 @@ end
 # Fundamental Domain
 struct FundamentalDomain
     geodesics::Vector{Geodesic}
-    deck_transformations::Vector{Matrix{qqbar}}
+    deck_transformations::Vector{Tuple{MatElem{qqbar}, MatElem{qqbar}}}
 end
 
 function fundamental_domain(n::UInt)
@@ -97,15 +107,15 @@ function fundamental_domain(n::UInt)
     geodesics = Geodesic{qqbar}[]
 
     for k in 1:n
-        push!(geodesics, Geodesic(boundary_points[k], boundary_points[(k % n) + 1]))
+        push!(geodesics, geodesic(boundary_points[k], boundary_points[(k % n) + 1]))
     end
 
-    deck_transformations = Matrix{qqbar}[]
+    deck_transformations = Tuple{MatElem{qqbar}, MatElem{qqbar}}[]
     n_2 = divexact(n, 2)
     for k in 1:n_2
         antipodal_k = k + n_2
         t = deck_transformation(geodesics[k], geodesics[antipodal_k])
-        push!(deck_transformations, t)
+        push!(deck_transformations, (t, inv(t)))
     end
     return FundamentalDomain(geodesics, deck_transformations)
 end
