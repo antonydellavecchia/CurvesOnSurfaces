@@ -24,11 +24,12 @@ function get_moebius(p_maps::Vector{<:PointMapType})
     M = matrix(QQBar, mat)
     dim, gen = kernel(M)
     @req dim == 1 "cannot find moebius transformation"
-
     
     A = matrix(QQBar, [gen[1] gen[2]; gen[3] gen[4]])
     sqrt_det = sqrt(det(A))
-    return matrix(QQBar, (1 // sqrt_det) .* A)
+    @req !is_zero(sqrt_det) "moebius transformation doesn't exist; increase punctures or genus"
+    s = QQBar(1) // sqrt_det
+    return matrix(QQBar, s .* A)
 end
 
 ################################################################################
@@ -104,17 +105,26 @@ struct FundamentalDomain
     deck_transformations::Vector{Tuple{MatElem{qqbar}, MatElem{qqbar}}}
 end
 
-function fundamental_domain(n::UInt)
+function fundamental_domain(n::UInt; padding::QQFieldElem = QQ(0))
     @req n % 4 == 0 "Can only divide boundary into multiples of 4"
-    
-    angle_coord = exp_pi_i(QQBar(QQ(2 // n)))
+    @req abs(padding) <= 1 "padding needs to be between -1 and 1"
 
-    boundary_points = [angle_coord^k for k in 0:n - 1]
-
+    generating_angle = exp_pi_i(QQBar(QQ(2 // n)))
+    padding_angle = exp_pi_i(QQBar(padding // QQ(n)))
+    boundary_points = qqbar[]
+    current_angle = QQBar(1)
     geodesics = Geodesic{qqbar}[]
 
-    for k in 1:n
-        push!(geodesics, geodesic(boundary_points[k], boundary_points[(k % n) + 1]))
+    for k in 1 : n
+        if (k % n) == 0
+            new_angle = conj(padding_angle)
+        else
+            new_angle = generating_angle * current_angle * conj(padding_angle)
+        end
+
+        push!(geodesics, geodesic(current_angle, new_angle))
+
+        current_angle = new_angle * padding_angle
     end
 
     deck_transformations = Tuple{MatElem{qqbar}, MatElem{qqbar}}[]
@@ -149,8 +159,8 @@ struct HyperbolicPlane
     geodesics::Vector{Geodesic}
 end
 
-function hyperbolic_plane(n::UInt)
-    return HyperbolicPlane(fundamental_domain(n), Geodesic[])
+function hyperbolic_plane(n::UInt; padding::QQFieldElem = QQ(0))
+    return HyperbolicPlane(fundamental_domain(n; padding=padding), Geodesic[])
 end
 
 fundamental_domain(H::HyperbolicPlane) = H.D

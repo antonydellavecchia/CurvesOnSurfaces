@@ -81,7 +81,7 @@ end
     end
 
     geodesics = D.geodesics
-    n_iter = 3
+    n_iter = 1
     for i in 1:n_iter
         new_geodesics = Geodesic[]
         for (A, A_inv) in D.deck_transformations
