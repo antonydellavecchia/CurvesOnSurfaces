@@ -40,15 +40,24 @@ mutable struct Geodesic{S <: FieldElem}
     p2::S
 end
 
-function geodesic(p1::qqbar, p2::qqbar)
+function compare_angles(p1::qqbar, p2::qqbar; precision::Int = 32)
+    CC = AcbField(precision)
+    theta1 = angle(CC(p1))
+    theta2 = angle(CC(p2))
 
-    return Geodesic(p1, p2)
-    theta1 = log_pi_i(p1 // abs(p1))
-    theta2 = log_pi_i(p2 // abs(p2))
-    
-    if abs(theta1 - theta2) > QQBar(1)
-        print(theta1, " ", theta2)
+    if overlaps(theta1, theta2)
+        return compare_angles(p1, p2; precision=precision + 1)
     end
+
+    return theta1 < theta2
+end
+
+function geodesic(p1::qqbar, p2::qqbar)
+    @req isone(abs(p1)) && isone(abs(p2)) && p1 != p2 "Geodesics require 2 unique points on the boundary"
+    if compare_angles(p1, p2)
+        Geodesic(p1, p2)
+    end
+    return Geodesic(p2, p1)
 end
 
 function get_circle_center(g::Geodesic)
@@ -70,10 +79,8 @@ end
 
 function on_point(q::qqbar, M::MatElem{qqbar})
     z = (M[1, 1] * q + M[1, 2]) // (M[2, 1] * q + M[2, 2])
-    println(abs(z), "***", abs(q))
-
+    
     if isone(abs(q))
-        
         @req isone(abs(z)) "point was moved off boundary"
     end
     return z
