@@ -1,19 +1,43 @@
 # defines the global precision
 const PLOT_CC = AcbField(62)
 
-function get_arc(g::Geodesic)
-    c = get_circle_center(g)
-    p1_c = g.p1 - c
-    p2_c = g.p2 - c
+function arc(g::T) where T <: Union{FiniteGeodesic, Geodesic}
+    if T <: FiniteGeodesic
+        c = circle_center(g.main)
+        start_intersection = intersection(g.main, g.g1)
+        end_intersection = intersection(g.main, g.g2)
+        p1_c = start_intersection - c
+        p2_c = end_intersection - c
+    else
+        c = circle_center(g)
+        p1_c = g.p1 - c
+        p2_c = g.p2 - c
+    end
     r = abs(p1_c)
-
     theta1 = angle(PLOT_CC(p1_c // r))
     theta2 = angle(PLOT_CC(p2_c // r))
 
-    return r, (theta1, theta2)
+    RR = ArbField(64)
+    theta1_f = convert(Float64, theta1)
+    theta2_f = convert(Float64, theta2)
+    
+    radius = convert(Float64, RR(r))
+
+    if abs(theta1_f - theta2_f) > pi
+        if theta1_f < 0
+            theta1_f += 2 * π
+
+        else
+            theta1_f -= 2 * π
+        end
+    end
+    points = Plots.partialcircle(theta1_f, theta2_f, 100, radius)
+
+    c_real = convert(Float64, real(PLOT_CC(c)))
+    c_imag = convert(Float64, imag(PLOT_CC(c)))
+    return [p .+ (c_real, c_imag) for p in points]
 end
 
-# Define the @recipe function for acb
 @recipe function f(::Type{acb}, c::acb)
     return (convert(Float64, real(c)), convert(Float64, imag(c)))
 end
@@ -30,37 +54,15 @@ end
     end
 end
 
-# Define the @recipe function for Vector{acb}
 @recipe function f(::Type{Vector{acb}}, v::Vector{acb})
     return [(convert(Float64, real(c)), convert(Float64, imag(c))) for c in v]
 end
 
-@recipe function f(g::Geodesic{qqbar})
-    c = get_circle_center(g)
-    r, (θ1, θ2) = get_arc(g)
-
-    RR = ArbField(64)
-    θ1_f = convert(Float64, θ1)
-    θ2_f = convert(Float64, θ2)
-    
-    radius = convert(Float64, RR(r))
-
-    if abs(θ1_f - θ2_f) > π
-        if θ1_f < 0
-            θ1_f += 2 * π
-        else
-            θ1_f -= 2 * π
-        end
-    end
-    points = Plots.partialcircle(θ1_f, θ2_f, 100, radius)
-    
-    c_real = convert(Float64, real(PLOT_CC(c)))
-    c_imag = convert(Float64, imag(PLOT_CC(c)))
-    [p .+ (c_real, c_imag) for p in points]
+@recipe function f(g::Geodesic)
+    arc(g)
 end
 
-## Define the @recipe function for Vector{Geodesic}
-@recipe function f(v::Vector{Geodesic{qqbar}})
+@recipe function f(v::Vector{Geodesic})
     for g in v
         @series begin
             g
@@ -68,23 +70,101 @@ end
     end
 end
 
+@recipe function f(fg::FiniteGeodesic)
+    #start geodesic
+    @series begin
+        color := :green
+        fg.g1
+    end
+
+    #end geodesic
+    @series begin
+        color := :red
+        fg.g2
+    end
+
+    # main geodesic
+    @series begin
+        color := :blue
+        arc(fg)
+    end
+end
+
+# this plotting function might be useful later
+# @recipe function f(fg::FiniteGeodesic)
+#     r1, _ = arc(fg.main)
+#     r2, _ = arc(fg.g1)
+#     c1 = circle_center(fg.main)
+#     c2 = circle_center(fg.g1)
+# 
+#     RR = ArbField(64)
+#     points_1 = Plots.partialcircle(0, 2π, 100, convert(Float64, RR(r1)))
+#     points_2 = Plots.partialcircle(0, 2π, 100, convert(Float64, RR(r2)))
+#     
+#     c1_real = convert(Float64, real(PLOT_CC(c1)))
+#     c1_imag = convert(Float64, imag(PLOT_CC(c1)))
+# 
+#     @series begin
+#         color := :blue
+#         [p .+ (c1_real, c1_imag) for p in points_1]
+#     end
+# 
+#     c2_real = convert(Float64, real(PLOT_CC(c2)))
+#     c2_imag = convert(Float64, imag(PLOT_CC(c2)))
+# 
+#     @series begin
+#         color := :red
+#         [p .+ (c2_real, c2_imag) for p in points_2]
+#     end
+# 
+#     @series begin
+#         color := :deepskyblue
+#         Plots.partialcircle(0, 2π, 100, 1)
+#     end
+# 
+#     l = intersection(fg.main, fg.g1)
+#     l_real = convert(Float64, real(PLOT_CC(l)))
+#     l_imag = convert(Float64, imag(PLOT_CC(l)))
+# 
+#     @series begin
+#         [(l_real, l_imag),
+#          (0, 0),
+#          (c1_real, c1_imag),
+#          (c2_real, c2_imag),
+#          (0, 0)]
+#     end
+# end
+#
+
 @recipe function f(H::HyperbolicPlane)
     legend = false
     @series begin
         color := :deepskyblue
         Plots.partialcircle(0, 2π, 100, 1)
     end
+
     D = fundamental_domain(H)
+    sides = identified_sides(D)
+    geodesics = reduce(vcat, [[side.first, side.second] for side in sides])
+
+    # plot main polygon
     @series begin
         color := :deepskyblue
-        reduce(vcat, D.geodesics)
+        geodesics
     end
 
-    geodesics = D.geodesics
+    # plot n_iter of translates1
+    transformations = deck_transformations(D)
+    invs = inv_transformations(D)
     n_iter = 1
     for i in 1:n_iter
         new_geodesics = Geodesic[]
-        for (A, A_inv) in D.deck_transformations
+        for (i, A) in enumerate(transformations)
+            if !isdefined(invs, i)
+                invs[i] = inv(A)
+            end
+
+            A_inv = invs[i]
             transformed_geodesics = reduce(vcat,
                                [[on_geodesic(g, A) for g in geodesics],
                                 [on_geodesic(g, A_inv) for g in geodesics]])
@@ -97,3 +177,4 @@ end
         geodesics = new_geodesics
     end
 end
+

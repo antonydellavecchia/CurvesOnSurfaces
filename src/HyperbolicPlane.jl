@@ -12,8 +12,17 @@ function half_angle_coords(angle_coord::qqbar)
     return cos + sqrt(QQBar(-1)) * sin
 end
 
+function on_point(q::qqbar, M::MatElem{qqbar})
+    z = (M[1, 1] * q + M[1, 2]) // (M[2, 1] * q + M[2, 2])
+    
+    if isone(abs(q))
+        @req isone(abs(z)) "point was moved off boundary"
+    end
+    return z
+end
+
 const PointMapType{T} = Pair{T, T} where T <: FieldElem
-function get_moebius(p_maps::Vector{<:PointMapType})
+function moebius(p_maps::Vector{<:PointMapType})
     mat = Vector{qqbar}[]
     for p_map in p_maps
         z1 = p_map.first
@@ -29,16 +38,28 @@ function get_moebius(p_maps::Vector{<:PointMapType})
     sqrt_det = sqrt(det(A))
     @req !is_zero(sqrt_det) "moebius transformation doesn't exist; increase punctures or genus"
     s = QQBar(1) // sqrt_det
-    return matrix(QQBar, s .* A)
+    m = matrix(QQBar, s .* A)
+
+    for p_map in p_maps
+        @req on_point(p_map.first, m) == p_map.second "Error mapping $(p_map.first) to $p_map.second"
+    end
+
+    return m
 end
 
 ################################################################################
 # Geodesic
 
-mutable struct Geodesic{S <: FieldElem}
+struct Geodesic
     # points should be ordered counter clockwise
-    p1::S
-    p2::S
+    p1::qqbar
+    p2::qqbar
+end
+
+struct FiniteGeodesic
+    main::Geodesic 
+    g1::Geodesic # start
+    g2::Geodesic # end
 end
 
 function compare_angles(p1::qqbar, p2::qqbar; precision::Int = 32)
@@ -56,17 +77,16 @@ end
 function geodesic(p1::qqbar, p2::qqbar)
     @req isone(abs(p1)) && isone(abs(p2)) && p1 != p2 "Geodesics require 2 unique points on the boundary"
     if compare_angles(p1, p2)
-        Geodesic(p1, p2)
+        return Geodesic(p1, p2)
     end
     return Geodesic(p2, p1)
 end
-
-function get_circle_center(g::Geodesic)
+    
+function circle_center(g::Geodesic)
     v1 = coordinates(g.p1)
     v2 = coordinates(g.p2)
-    
-    v1_perp = [-v1[2], v1[1]]
-    v2_perp = [-v2[2], v2[1]]
+    v1_perp = perp(v1)
+    v2_perp = perp(v2)
     M = matrix(QQBar, hcat(v1_perp, v2_perp))
     b = [v2[1] - v1[1], v2[2] - v1[2]]
     t = inv(M) * b
@@ -78,16 +98,7 @@ function get_circle_center(g::Geodesic)
     return result[1] + i * result[2]
 end
 
-function on_point(q::qqbar, M::MatElem{qqbar})
-    z = (M[1, 1] * q + M[1, 2]) // (M[2, 1] * q + M[2, 2])
-    
-    if isone(abs(q))
-        @req isone(abs(z)) "point was moved off boundary"
-    end
-    return z
-end
-
-function on_geodesic(g::Geodesic{qqbar}, M::MatElem{qqbar}; copy::Bool = true)
+function on_geodesic(g::Geodesic, M::MatElem{qqbar}; copy::Bool = true)
     p1 = on_point(g.p1, M)
     p2 = on_point(g.p2, M)
 
@@ -98,11 +109,60 @@ function on_geodesic(g::Geodesic{qqbar}, M::MatElem{qqbar}; copy::Bool = true)
     g.p2 = p2
     return g
 end
+
+function perp(v::Vector{qqbar})
+    # returns perpendicular vector to point on unit circle
+    n = sqrt(v[1]^2 + v[2]^2)
+    return [-v[2] // n, v[1] // n]
+end
+
+function perp(q::qqbar)
+    v = perp(coordinates(q))
+    return v[1] + sqrt(QQBar(-1)) * v[2]
+end
+
+function intersection(g1::Geodesic, g2::Geodesic)
+    c1 = circle_center(g1)
+    r1 = abs(g1.p1 - c1)
+    c2 = circle_center(g2)
+    r2 = abs(g2.p1 - c2)
+    d =  c2 - c1
+    t = (abs(d)^2 - r2^2 + r1^2) // (2 * abs(d))
+
+    # projection of intersection points onto line between centers
+    x = c1 + d * t // abs(d)
+    d_perp = perp(d // abs(d))
+    dist_to_intersection = sqrt((r1 + t) * (r1 - t)) 
+    y =  dist_to_intersection * d_perp + x
+
+    if abs(y) < 1
+        return y
+    else
+        return - dist_to_intersection * d_perp + x
+    end
+end
+
 ################################################################################
 # Fundamental Domain
 struct FundamentalDomain
-    geodesics::Vector{Geodesic}
-    deck_transformations::Vector{Tuple{MatElem{qqbar}, MatElem{qqbar}}}
+    identified_sides::Vector{Pair{Geodesic, Geodesic}}
+    deck_transformations::Vector{MatElem{qqbar}}
+    inv_transformations::Vector
+end
+
+deck_transformations(D::FundamentalDomain) = D.deck_transformations
+inv_transformations(D::FundamentalDomain) = D.inv_transformations
+identified_sides(D::FundamentalDomain) = D.identified_sides
+
+function opposite_side(D::FundamentalDomain, g::Geodesic)
+    for identified_side in identified_sides
+        if g == identified_side.first
+            return identified_side.second
+        elseif g == identified_side.second
+            return identified_side.first
+        end
+    end
+    @req true "geodesic $g doesn't correspond to a side of the fundamental domain"
 end
 
 function fundamental_domain(n::UInt; padding::QQFieldElem = QQ(0))
@@ -113,7 +173,7 @@ function fundamental_domain(n::UInt; padding::QQFieldElem = QQ(0))
     padding_angle = exp_pi_i(QQBar(padding // QQ(n)))
     boundary_points = qqbar[]
     current_angle = QQBar(1)
-    geodesics = Geodesic{qqbar}[]
+    geodesics = Geodesic[]
 
     for k in 1 : n
         if (k % n) == 0
@@ -127,14 +187,20 @@ function fundamental_domain(n::UInt; padding::QQFieldElem = QQ(0))
         current_angle = new_angle * padding_angle
     end
 
-    deck_transformations = Tuple{MatElem{qqbar}, MatElem{qqbar}}[]
+    deck_transformations = MatElem{qqbar}[]
+    identified_sides = Pair{Geodesic, Geodesic}[]
+    
     n_2 = divexact(n, 2)
     for k in 1:n_2
         antipodal_k = k + n_2
         t = deck_transformation(geodesics[k], geodesics[antipodal_k])
-        push!(deck_transformations, (t, inv(t)))
+        push!(deck_transformations, t)
+
+        identified_side = geodesics[k] => geodesics[antipodal_k]
+        push!(identified_sides, identified_side)
     end
-    return FundamentalDomain(geodesics, deck_transformations)
+    return FundamentalDomain(identified_sides, deck_transformations,
+                             Vector(undef, length(deck_transformations)))
 end
 
 function deck_transformation(g1::Geodesic, g2::Geodesic)
@@ -144,11 +210,7 @@ function deck_transformation(g1::Geodesic, g2::Geodesic)
         g1.p2 => g2.p1,
         fixed_point => fixed_point
     ]
-    m = get_moebius(p_maps)
-    @req on_point(fixed_point, m) == fixed_point "Point is not being fixed"
-    @req on_point(g1.p1, m) == g2.p2 "Error with mapping first point"
-    @req on_point(g1.p2, m) == g2.p1 "Error with mapping second point"
-
+    m = moebius(p_maps)
     return m
 end
 
@@ -156,11 +218,11 @@ end
 # Hyperbolic Plane
 struct HyperbolicPlane
     D::FundamentalDomain
-    geodesics::Vector{Geodesic}
 end
 
 function hyperbolic_plane(n::UInt; padding::QQFieldElem = QQ(0))
-    return HyperbolicPlane(fundamental_domain(n; padding=padding), Geodesic[])
+    return HyperbolicPlane(fundamental_domain(n; padding=padding))
 end
 
 fundamental_domain(H::HyperbolicPlane) = H.D
+deck_transformations(H::HyperbolicPlane) = deck_transformations(H.D)
