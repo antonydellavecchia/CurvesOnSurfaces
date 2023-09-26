@@ -22,7 +22,7 @@ function on_point(q::qqbar, M::MatElem{qqbar})
 end
 
 const PointMapType{T} = Pair{T, T} where T <: FieldElem
-function moebius(p_maps::Vector{<:PointMapType})
+function moebius(p_maps::Vector{<:PointMapType}; check::Bool=false)
     mat = Vector{qqbar}[]
     for p_map in p_maps
         z1 = p_map.first
@@ -31,17 +31,15 @@ function moebius(p_maps::Vector{<:PointMapType})
         push!(mat, eq)
     end
     M = matrix(QQBar, mat)
+
     dim, gen = kernel(M)
     @req dim == 1 "cannot find moebius transformation"
+    m = matrix(QQBar, [gen[1] gen[2]; gen[3] gen[4]])
     
-    A = matrix(QQBar, [gen[1] gen[2]; gen[3] gen[4]])
-    sqrt_det = sqrt(det(A))
-    @req !is_zero(sqrt_det) "moebius transformation doesn't exist; increase punctures or genus"
-    s = QQBar(1) // sqrt_det
-    m = matrix(QQBar, s .* A)
-
-    for p_map in p_maps
-        @req on_point(p_map.first, m) == p_map.second "Error mapping $(p_map.first) to $p_map.second"
+    if check
+        for p_map in p_maps
+            @req on_point(p_map.first, m) == p_map.second "Error mapping $(p_map.first) to $p_map.second"
+        end
     end
 
     return m
@@ -64,8 +62,18 @@ end
 
 function compare_angles(p1::qqbar, p2::qqbar; precision::Int = 32)
     CC = AcbField(precision)
+    RR = ArbField(precision)
     theta1 = angle(CC(p1))
     theta2 = angle(CC(p2))
+    pi = const_pi(RR)
+
+    if abs(theta1 - theta2) > pi
+        if isnegative(theta1)
+            theta1 += 2 * pi
+        else
+            theta2 += 2 * pi
+        end
+    end
 
     if overlaps(theta1, theta2)
         return compare_angles(p1, p2; precision=precision + 1)
@@ -82,17 +90,19 @@ function geodesic(p1::qqbar, p2::qqbar)
     return Geodesic(p2, p1)
 end
     
-function circle_center(g::Geodesic)
-    v1 = coordinates(g.p1)
-    v2 = coordinates(g.p2)
-    v1_perp = perp(v1)
-    v2_perp = perp(v2)
+function circle_center(g::Geodesic; check::Bool = true)
+    v1 = g.p1
+    v2 = g.p2
+    v1_perp = perp(g.p1)
+    v2_perp = perp(g.p2)
     M = matrix(QQBar, hcat(v1_perp, v2_perp))
-    b = [v2[1] - v1[1], v2[2] - v1[2]]
-    t = inv(M) * b
-    result = t[1] .* v1_perp + v1
+    b = matrix(QQBar, 2, 1, [v2[1] - v1[1], v2[2] - v1[2]])
+    t = solve(M, b)
+    result = - v1_perp + v1
 
-    @req result == t[2] .* v1_perp + v1 "Error computing center"
+    if check
+        @req result == t[2] .* v1_perp + v1 "Error computing center"
+    end
     i = sqrt(QQBar(-1))
 
     return result[1] + i * result[2]
@@ -110,35 +120,31 @@ function on_geodesic(g::Geodesic, M::MatElem{qqbar}; copy::Bool = true)
     return g
 end
 
-function perp(v::Vector{qqbar})
-    # returns perpendicular vector to point on unit circle
-    n = sqrt(v[1]^2 + v[2]^2)
-    return [-v[2] // n, v[1] // n]
-end
-
 function perp(q::qqbar)
-    v = perp(coordinates(q))
-    return v[1] + sqrt(QQBar(-1)) * v[2]
+    return q * sqrt(QQBar(-1))
 end
 
 function intersection(g1::Geodesic, g2::Geodesic)
-    c1 = circle_center(g1)
+    @time "get center" c1 = circle_center(g1)
     r1 = abs(g1.p1 - c1)
     c2 = circle_center(g2)
     r2 = abs(g2.p1 - c2)
     d =  c2 - c1
-    t = (abs(d)^2 - r2^2 + r1^2) // (2 * abs(d))
+    @time "dist" abs_d = abs(d)
+    @time "parameter" t = abs_d // 2 + (- r2^2 + r1^2) // (2 * abs_d)
 
+    @time "scaling" d_d_abs = d // abs_d
     # projection of intersection points onto line between centers
-    x = c1 + d * t // abs(d)
-    d_perp = perp(d // abs(d))
-    dist_to_intersection = sqrt((r1 + t) * (r1 - t)) 
-    y =  dist_to_intersection * d_perp + x
+    @time "translate from center" x = c1 + d_d_abs * t
+    @time "perp" d_perp = perp(d_d_abs)
+    @time "dist to inter" dist_to_intersection = sqrt((r1 + t) * (r1 - t))
+    @time "direction and dist" direction_and_dist = dist_to_intersection * d_perp
+    y = direction_and_dist  + x
 
     if abs(y) < 1
         return y
     else
-        return - dist_to_intersection * d_perp + x
+        return - direction_and_dist + x
     end
 end
 
@@ -147,7 +153,7 @@ end
 struct FundamentalDomain
     identified_sides::Vector{Pair{Geodesic, Geodesic}}
     deck_transformations::Vector{MatElem{qqbar}}
-    inv_transformations::Vector
+    inv_transformations::Vector{MatElem{qqbar}}
 end
 
 deck_transformations(D::FundamentalDomain) = D.deck_transformations
@@ -155,7 +161,7 @@ inv_transformations(D::FundamentalDomain) = D.inv_transformations
 identified_sides(D::FundamentalDomain) = D.identified_sides
 
 function opposite_side(D::FundamentalDomain, g::Geodesic)
-    for identified_side in identified_sides
+    for identified_side in identified_sides(D)
         if g == identified_side.first
             return identified_side.second
         elseif g == identified_side.second
@@ -183,7 +189,6 @@ function fundamental_domain(n::UInt; padding::QQFieldElem = QQ(0))
         end
 
         push!(geodesics, geodesic(current_angle, new_angle))
-
         current_angle = new_angle * padding_angle
     end
 
@@ -200,7 +205,7 @@ function fundamental_domain(n::UInt; padding::QQFieldElem = QQ(0))
         push!(identified_sides, identified_side)
     end
     return FundamentalDomain(identified_sides, deck_transformations,
-                             Vector(undef, length(deck_transformations)))
+                             inv.(deck_transformations))
 end
 
 function deck_transformation(g1::Geodesic, g2::Geodesic)

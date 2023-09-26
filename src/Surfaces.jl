@@ -33,25 +33,33 @@ struct FreeHomotopyClass
 end
 
 function free_homotopy_class(word::FPGroupElem, S::Surface)
+    word_letters = letters(word)
+
+    # we don't allow conjugations words
+    @req word_letters[end] != word_letters[1] "word should be cyclically reduced"
+    
     D = fundamental_domain(universal_cover(S))
     sides = identified_sides(D)
     #acts by last letter in the word first since we use a left action
     init_letter = letters(word)[end]
 
-    if is_negative(init_letter)
-        g1 = sides[abs(init_letter)][2]
+    # start the translate from opposite side so lift goes across fundamental domain
+    # but we start the lift from g1, this is so the loop is closed
+    if is_positive(init_letter)
+        g1, start_side = sides[abs(init_letter)]
     else
-        g1 = sides[abs(init_letter)][1]
+        start_side, g1 = sides[abs(init_letter)]
     end
 
     m_rep = map_word(word, deck_transformations(D); genimgs_inv=inv_transformations(D))
-
-    g2 = on_geodesic(g1, m_rep)
-
+    
+    g2 = on_geodesic(start_side, m_rep)
+    
     return FreeHomotopyClass(word, S, g1, g2)
 end
 
 surface(c::FreeHomotopyClass) = c.S
+word(c::FreeHomotopyClass) = c.word
 init_geodesic(c::FreeHomotopyClass) = c.g1
 end_geodesic(c::FreeHomotopyClass) = c.g2
 
@@ -64,7 +72,11 @@ struct SurfaceGeodesic
     parts::Vector{FiniteGeodesic}
 end
 
-function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem)
+free_homotopy_class(sg::SurfaceGeodesic) = sg.class
+parts(sg::SurfaceGeodesic) = sg.parts
+surface(sg::SurfaceGeodesic) = surface(free_homotopy_class(sg))
+
+function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=false)
     S = surface(c)
     g1 = init_geodesic(c)
     g2 = end_geodesic(c)
@@ -72,23 +84,52 @@ function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem)
     start_angle = (log_pi_i(g1.p2 // g1.p1)) * QQBar(frac) + log_pi_i(g1.p1)
     start_point = exp_pi_i(start_angle)
 
-    m = moebius([
+    @time "finding moebius for lift" m = moebius([
         start_point => start_point,
         g1.p1 => g2.p2,
         g1.p2 => g2.p1
     ])
 
-    # find other fixed point of moebius transformation knowinga
+    # find other fixed point of moebius transformation knowing
     # one (start point) by factoring a monic polynomial
     QQBarx, x = QQBar["x"]
     p = x^2 + ((m[2, 2] - m[1, 1]) * x - m[1, 2]) * (QQBar(1) // m[2, 1])
-    q = divexact(p, (x - start_point))
+    @time "dividing" q = divexact(p, (x - start_point))
     other_fixed_point = -evaluate(q, QQBar(0))
 
-    @req is_zero(evaluate(p, other_fixed_point)) "Couldn't find fixed point"
+    if check
+        @req is_zero(evaluate(p, other_fixed_point)) "Couldn't find fixed point"
+    end
 
     main = geodesic(start_point, other_fixed_point)
     lift = FiniteGeodesic(main, g1, g2)
+
+    w = word(c)
+    D = fundamental_domain(universal_cover(S))
+    transformations = deck_transformations(D)
+    invs = inv_transformations(D)
     
-    return lift
+    sides = identified_sides(D)
+    start_g = g1
+    translated_main = main
+    domain_fgs = FiniteGeodesic[]
+    
+    for l in letters(w)
+        # end_side is a pair of geodesics that are identified
+        end_side = sides[abs(l)]
+        end_g = ispositive(l) ? end_side.second : end_side.first
+
+        fg = FiniteGeodesic(translated_main, start_g, end_g)
+        push!(domain_fgs, fg)
+        start_g = opposite_side(D, end_g)
+
+        m = ispositive(l) ? invs[l] : transformations[-l]
+        @time "translating" translated_main = on_geodesic(translated_main, m)
+    end
+    
+    end_g = opposite_side(D, g1)
+    fg = FiniteGeodesic(translated_main, start_g, end_g)
+    push!(domain_fgs, fg)
+
+    return SurfaceGeodesic(c, lift, domain_fgs)
 end

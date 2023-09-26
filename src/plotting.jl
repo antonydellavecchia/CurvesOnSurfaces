@@ -1,6 +1,6 @@
-# defines the global precision
-const PLOT_CC = AcbField(62)
-
+# defines the global plot precision
+const PLOT_CC = AcbField(15)
+const PLOT_RR = ArbField(15)
 function arc(g::T) where T <: Union{FiniteGeodesic, Geodesic}
     if T <: FiniteGeodesic
         c = circle_center(g.main)
@@ -13,22 +13,21 @@ function arc(g::T) where T <: Union{FiniteGeodesic, Geodesic}
         p1_c = g.p1 - c
         p2_c = g.p2 - c
     end
-    r = abs(p1_c)
-    theta1 = angle(PLOT_CC(p1_c // r))
-    theta2 = angle(PLOT_CC(p2_c // r))
+    r = abs(PLOT_CC(p1_c))
+    theta1 = angle(PLOT_CC(p1_c) / r)
+    theta2 = angle(PLOT_CC(p2_c) / r)
 
-    RR = ArbField(64)
+
     theta1_f = convert(Float64, theta1)
     theta2_f = convert(Float64, theta2)
     
-    radius = convert(Float64, RR(r))
+    radius = convert(Float64, PLOT_RR(r))
 
     if abs(theta1_f - theta2_f) > pi
         if theta1_f < 0
-            theta1_f += 2 * π
-
+            theta1_f += 2 * pi
         else
-            theta1_f -= 2 * π
+            theta1_f -= 2 * pi
         end
     end
     points = Plots.partialcircle(theta1_f, theta2_f, 100, radius)
@@ -135,6 +134,18 @@ end
 #     end
 # end
 #
+
+@recipe function f(sg::SurfaceGeodesic)
+    @series begin
+        universal_cover(surface(sg))
+    end
+
+    for part in parts(sg)
+        @series begin
+            part
+        end
+    end
+end
 
 @recipe function f(H::HyperbolicPlane)
     legend = false
