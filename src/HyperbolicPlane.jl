@@ -90,22 +90,19 @@ function geodesic(p1::qqbar, p2::qqbar)
     return Geodesic(p2, p1)
 end
     
-function circle_center(g::Geodesic; check::Bool = true)
-    v1 = g.p1
-    v2 = g.p2
-    v1_perp = perp(g.p1)
-    v2_perp = perp(g.p2)
-    M = matrix(QQBar, hcat(v1_perp, v2_perp))
-    b = matrix(QQBar, 2, 1, [v2[1] - v1[1], v2[2] - v1[2]])
-    t = solve(M, b)
-    result = - v1_perp + v1
+function circle_center(g::Geodesic; check::Bool = false)
+    # uses similar triangles
+    p = g.p1
+    q = g.p2
+    
+    x = p + q
+    s = p - q
+    s_x = s // x
 
-    if check
-        @req result == t[2] .* v1_perp + v1 "Error computing center"
-    end
-    i = sqrt(QQBar(-1))
+    return x * (1 + s_x * conj(s_x)) // 2
 
-    return result[1] + i * result[2]
+    # this one seems to take longer? on larger input?
+    # return (x + s * conj(s_x)) // 2
 end
 
 function on_geodesic(g::Geodesic, M::MatElem{qqbar}; copy::Bool = true)
@@ -125,24 +122,26 @@ function perp(q::qqbar)
 end
 
 function intersection(g1::Geodesic, g2::Geodesic)
-    @time "get center" c1 = circle_center(g1)
+    c1 = circle_center(g1)
     r1 = abs(g1.p1 - c1)
     c2 = circle_center(g2)
     r2 = abs(g2.p1 - c2)
     d =  c2 - c1
-    @time "dist" abs_d = abs(d)
-    @time "parameter" t = abs_d // 2 + (- r2^2 + r1^2) // (2 * abs_d)
+    abs_d = abs(d)
+    l =  (r1 - r2) * (r1 + r2) // (2 * abs_d)
+    t = abs_d // 2 + l
+    d_d_abs = d // abs_d
 
-    @time "scaling" d_d_abs = d // abs_d
     # projection of intersection points onto line between centers
-    @time "translate from center" x = c1 + d_d_abs * t
-    @time "perp" d_perp = perp(d_d_abs)
-    @time "dist to inter" dist_to_intersection = sqrt((r1 + t) * (r1 - t))
-    @time "direction and dist" direction_and_dist = dist_to_intersection * d_perp
-    y = direction_and_dist  + x
+    x = c1 + t * d_d_abs
+    d_perp = perp(d_d_abs)
+    dist_to_intersection = sqrt((r1 - t) * (r1 + t))
+    direction_and_dist = dist_to_intersection * d_perp
 
-    if abs(y) < 1
-        return y
+    # this works since we take perp by rotating 90 degrees counter clockwise
+    # and geodesics have their points ordered counter clockwise
+    if compare_angles(g1.p1, g2.p1)
+        return direction_and_dist + x
     else
         return - direction_and_dist + x
     end
