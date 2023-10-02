@@ -45,28 +45,13 @@ function moebius(p_maps::Vector{<:PointMapType}; check::Bool=false)
     return m
 end
 
-################################################################################
-# Geodesic
-
-struct Geodesic
-    # points should be ordered counter clockwise
-    p1::qqbar
-    p2::qqbar
-end
-
-struct FiniteGeodesic
-    main::Geodesic 
-    g1::Geodesic # start
-    g2::Geodesic # end
-end
-
 function compare_angles(p1::qqbar, p2::qqbar; precision::Int = 32)
     CC = AcbField(precision)
     RR = ArbField(precision)
     theta1 = angle(CC(p1))
     theta2 = angle(CC(p2))
     pi = const_pi(RR)
-
+    
     if abs(theta1 - theta2) > pi
         if isnegative(theta1)
             theta1 += 2 * pi
@@ -82,6 +67,19 @@ function compare_angles(p1::qqbar, p2::qqbar; precision::Int = 32)
     return theta1 < theta2
 end
 
+function perp(q::qqbar)
+    return q * sqrt(QQBar(-1))
+end
+
+################################################################################
+# Geodesic
+
+struct Geodesic
+    # points ordered counter clockwise
+    p1::qqbar
+    p2::qqbar
+end
+
 function geodesic(p1::qqbar, p2::qqbar)
     @req isone(abs(p1)) && isone(abs(p2)) && p1 != p2 "Geodesics require 2 unique points on the boundary"
     if compare_angles(p1, p2)
@@ -89,7 +87,7 @@ function geodesic(p1::qqbar, p2::qqbar)
     end
     return Geodesic(p2, p1)
 end
-    
+
 function circle_center(g::Geodesic; check::Bool = false)
     # uses similar triangles
     p = g.p1
@@ -117,9 +115,6 @@ function on_geodesic(g::Geodesic, M::MatElem{qqbar}; copy::Bool = true)
     return g
 end
 
-function perp(q::qqbar)
-    return q * sqrt(QQBar(-1))
-end
 
 function intersection(g1::Geodesic, g2::Geodesic)
     c1 = circle_center(g1)
@@ -128,6 +123,11 @@ function intersection(g1::Geodesic, g2::Geodesic)
     r2 = abs(g2.p1 - c2)
     d =  c2 - c1
     abs_d = abs(d)
+
+    if abs_d > r1 + r2
+        return nothing
+    end
+    
     l =  (r1 - r2) * (r1 + r2) // (2 * abs_d)
     t = abs_d // 2 + l
     d_d_abs = d // abs_d
@@ -145,6 +145,60 @@ function intersection(g1::Geodesic, g2::Geodesic)
     else
         return - direction_and_dist + x
     end
+end
+
+################################################################################
+# FiniteGeodesic
+
+struct FiniteGeodesic
+    g::Geodesic 
+    g1::Geodesic # start
+    g2::Geodesic # end
+end
+
+geodesic(fg::FiniteGeodesic) = fg.g
+init_geodesic(fg::FiniteGeodesic) = fg.g1
+end_geodesic(fg::FiniteGeodesic) = fg.g2
+
+################################################################################
+# DomainGeodesic
+
+struct DomainGeodesic
+    fg::FiniteGeodesic
+    translate::Vector{Int}
+end
+
+domain_geodesic(fg::FiniteGeodesic, t::Vector{Int}) = DomainGeodesic(fg, t)
+init_geodesic(dg::DomainGeodesic) = init_geodesic(dg.fg)
+end_geodesic(dg::DomainGeodesic) = end_geodesic(dg.fg)
+geodesic(dg::DomainGeodesic) = geodesic(dg.fg)
+
+struct DomainIntersection
+    dg1::DomainGeodesic
+    dg2::DomainGeodesic
+    label::Vector{Int} # labelled by their word difference
+end
+
+function domain_intersection(dg1::DomainGeodesic, dg2::DomainGeodesic)
+    # when the first geodesic has the larger translate
+    # the intersection is labelled by the inverse differnce
+    # this is because we apply the label as a group element
+    # to the lift (full word) it makes sense that the larger
+    # translate should be moved back while the shorter one
+    # should be pushed forward while translating dg2 to
+    # intersect with the lift
+
+    l1 = length(dg1.translate)
+    l2 = length(dg2.translate)
+    l1_l2 = l1 - l2
+
+    if l1 > l2
+        label = reverse([-l for l in dg1.translate[1:l1_l2]])
+    else
+        label = [l for l in dg2.translate[1:- l1_l2]]
+    end
+
+    return DomainIntersection(dg1, dg2, label)
 end
 
 ################################################################################

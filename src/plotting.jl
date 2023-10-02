@@ -3,9 +3,9 @@ const PLOT_CC = AcbField(15)
 const PLOT_RR = ArbField(15)
 function arc(g::T) where T <: Union{FiniteGeodesic, Geodesic}
     if T <: FiniteGeodesic
-        c = circle_center(g.main)
-        start_intersection = intersection(g.main, g.g1)
-        end_intersection = intersection(g.main, g.g2)
+        c = circle_center(geodesic(g))
+        start_intersection = intersection(geodesic(g), g.g1)
+        end_intersection = intersection(geodesic(g), g.g2)
         p1_c = start_intersection - c
         p2_c = end_intersection - c
     else
@@ -16,7 +16,6 @@ function arc(g::T) where T <: Union{FiniteGeodesic, Geodesic}
     r = abs(PLOT_CC(p1_c))
     theta1 = angle(PLOT_CC(p1_c) / r)
     theta2 = angle(PLOT_CC(p2_c) / r)
-
 
     theta1_f = convert(Float64, theta1)
     theta2_f = convert(Float64, theta2)
@@ -89,11 +88,17 @@ end
     end
 end
 
+@recipe function f(dg::DomainGeodesic)
+    @series begin
+        dg.fg
+    end
+end
+
 # this plotting function might be useful later
 # @recipe function f(fg::FiniteGeodesic)
-#     r1, _ = arc(fg.main)
+#     r1, _ = arc(fgeodesic(g))
 #     r2, _ = arc(fg.g1)
-#     c1 = circle_center(fg.main)
+#     c1 = circle_center(fgeodesic(g))
 #     c2 = circle_center(fg.g1)
 # 
 #     RR = ArbField(64)
@@ -121,7 +126,7 @@ end
 #         Plots.partialcircle(0, 2π, 100, 1)
 #     end
 # 
-#     l = intersection(fg.main, fg.g1)
+#     l = intersection(fgeodesic(g), fg.g1)
 #     l_real = convert(Float64, real(PLOT_CC(l)))
 #     l_imag = convert(Float64, imag(PLOT_CC(l)))
 # 
@@ -140,9 +145,9 @@ end
         universal_cover(surface(sg))
     end
 
-    for part in parts(sg)
+    for dg in domain_geodesics(sg)
         @series begin
-            part
+            dg
         end
     end
 end

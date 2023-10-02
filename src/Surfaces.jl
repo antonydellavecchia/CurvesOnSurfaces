@@ -69,11 +69,11 @@ end_geodesic(c::FreeHomotopyClass) = c.g2
 struct SurfaceGeodesic
     class::FreeHomotopyClass
     lift::FiniteGeodesic
-    parts::Vector{FiniteGeodesic}
+    domain_geodesics::Vector{DomainGeodesic}
 end
 
 free_homotopy_class(sg::SurfaceGeodesic) = sg.class
-parts(sg::SurfaceGeodesic) = sg.parts
+domain_geodesics(sg::SurfaceGeodesic) = sg.domain_geodesics
 surface(sg::SurfaceGeodesic) = surface(free_homotopy_class(sg))
 
 function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=false)
@@ -112,7 +112,8 @@ function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=f
     sides = identified_sides(D)
     start_g = g1
     translated_main = main
-    domain_fgs = FiniteGeodesic[]
+    domain_fgs = DomainGeodesic[]
+    current_translate = Int[]
     
     for l in letters(w)
         # end_side is a pair of geodesics that are identified
@@ -120,16 +121,61 @@ function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=f
         end_g = ispositive(l) ? end_side.second : end_side.first
 
         fg = FiniteGeodesic(translated_main, start_g, end_g)
-        push!(domain_fgs, fg)
+        dg = domain_geodesic(fg, copy(current_translate))
+        push!(domain_fgs, dg)
         start_g = opposite_side(D, end_g)
 
         m = ispositive(l) ? invs[l] : transformations[-l]
-        @time "translating" translated_main = on_geodesic(translated_main, m)
+        translated_main = on_geodesic(translated_main, m)
+        current_translate = pushfirst!(current_translate, -l)
     end
     
     end_g = opposite_side(D, g1)
     fg = FiniteGeodesic(translated_main, start_g, end_g)
-    push!(domain_fgs, fg)
+    dg = DomainGeodesic(fg, copy(current_translate))
+    push!(domain_fgs, dg)
 
     return SurfaceGeodesic(c, lift, domain_fgs)
+end
+
+function self_intersections(sg::SurfaceGeodesic)
+    intersections = DomainIntersection[]
+    dgs = domain_geodesics(sg)
+
+    for (i, dg1) in enumerate(dgs)
+        dg1_intersections = Tuple{DomainIntersection, qqbar}
+        dg1_start = init_geodesic(dg1)
+        dg1_end = end_geodesic(dg1)
+        dg1_geodesic = geodesic(dg1)
+
+        start_point = intersection(dg1_geodesic, dg1_start)
+        end_point = intersection(dg1_geodesic, dg1_end)
+        center = circle_center(dg1_geodesic)
+        s = start_point - center
+        e = end_point - center
+        for (j, dg2) in enumerate(dgs)
+            if i == j
+                continue
+            end
+            
+            inter = intersection(dg1_geodesic, geodesic(dg2))
+
+            if isnothing(inter)
+                continue
+            end
+
+            inter -= center
+
+            if compare_angles(s, e) && (compare_angles(inter, s) || compare_angles(e, inter))
+                continue
+            end
+            if compare_angles(e, s) && (compare_angles(inter, e) || compare_angles(s, inter))
+                continue
+            end
+            # intersection lies in fundamental domain
+            push!(intersections, domain_intersection(dg1, dg2))
+            println(i, " ", j)
+        end
+    end
+    return intersections
 end
