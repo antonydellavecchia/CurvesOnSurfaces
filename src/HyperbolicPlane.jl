@@ -51,7 +51,7 @@ function compare_angles(p1::qqbar, p2::qqbar; precision::Int = 32)
     theta1 = angle(CC(p1))
     theta2 = angle(CC(p2))
     pi = const_pi(RR)
-    
+
     if abs(theta1 - theta2) > pi
         if isnegative(theta1)
             theta1 += 2 * pi
@@ -125,6 +125,10 @@ function intersection(g1::Geodesic, g2::Geodesic)
     abs_d = abs(d)
 
     if abs_d > r1 + r2
+        return nothing
+    end
+
+    if abs_d + r1 < r2 || abs_d + r2 < r1
         return nothing
     end
     

@@ -141,9 +141,8 @@ end
 function self_intersections(sg::SurfaceGeodesic)
     intersections = DomainIntersection[]
     dgs = domain_geodesics(sg)
-
     for (i, dg1) in enumerate(dgs)
-        dg1_intersections = Tuple{DomainIntersection, qqbar}
+        dg1_intersections = Tuple{DomainIntersection, qqbar}[]
         dg1_start = init_geodesic(dg1)
         dg1_end = end_geodesic(dg1)
         dg1_geodesic = geodesic(dg1)
@@ -153,6 +152,7 @@ function self_intersections(sg::SurfaceGeodesic)
         center = circle_center(dg1_geodesic)
         s = start_point - center
         e = end_point - center
+        
         for (j, dg2) in enumerate(dgs)
             if i == j
                 continue
@@ -165,17 +165,19 @@ function self_intersections(sg::SurfaceGeodesic)
             end
 
             inter -= center
-
+            
             if compare_angles(s, e) && (compare_angles(inter, s) || compare_angles(e, inter))
                 continue
             end
             if compare_angles(e, s) && (compare_angles(inter, e) || compare_angles(s, inter))
                 continue
             end
+
             # intersection lies in fundamental domain
-            push!(intersections, domain_intersection(dg1, dg2))
-            println(i, " ", j)
+            push!(dg1_intersections, (domain_intersection(dg1, dg2), inter))
         end
+        sort!(dg1_intersections; lt=compare_angles, by = x -> x[2], rev = compare_angles(e, s))
+        intersections = vcat(intersections, [dg_inter[1] for dg_inter in dg1_intersections])
     end
     return intersections
 end
