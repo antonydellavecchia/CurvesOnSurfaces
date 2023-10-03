@@ -1,0 +1,7 @@
+using Oscar, Test
+
+@testset "Hyperbolic Geometry" begin
+    S = hyperbolic_surface(2)
+
+
+end

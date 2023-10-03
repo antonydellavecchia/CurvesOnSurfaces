@@ -115,7 +115,6 @@ function on_geodesic(g::Geodesic, M::MatElem{qqbar}; copy::Bool = true)
     return g
 end
 
-
 function intersection(g1::Geodesic, g2::Geodesic)
     c1 = circle_center(g1)
     r1 = abs(g1.p1 - c1)

@@ -1,3 +1,5 @@
+import Base.length
+
 struct Surface
     fundamental_group::FPGroup
     universal_cover::HyperbolicPlane
@@ -36,7 +38,7 @@ function free_homotopy_class(word::FPGroupElem, S::Surface)
     word_letters = letters(word)
 
     # we don't allow conjugations words
-    @req word_letters[end] != word_letters[1] "word should be cyclically reduced"
+    @req word_letters[end] != - word_letters[1] "word should be cyclically reduced"
     
     D = fundamental_domain(universal_cover(S))
     sides = identified_sides(D)
@@ -75,6 +77,7 @@ end
 free_homotopy_class(sg::SurfaceGeodesic) = sg.class
 domain_geodesics(sg::SurfaceGeodesic) = sg.domain_geodesics
 surface(sg::SurfaceGeodesic) = surface(free_homotopy_class(sg))
+lift(sg::SurfaceGeodesic) = sg.lift
 
 function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=false)
     S = surface(c)
@@ -180,4 +183,38 @@ function self_intersections(sg::SurfaceGeodesic)
         intersections = vcat(intersections, [dg_inter[1] for dg_inter in dg1_intersections])
     end
     return intersections
+end
+
+function length(sg::SurfaceGeodesic)
+    l = lift(sg)
+    p = intersection(geodesic(l), init_geodesic(l))
+    q = intersection(geodesic(l), end_geodesic(l))
+
+    # since log is monotone increasing, when comparing length we need only compare
+    # the following expression
+    return (abs(1 - conj(p) * q) + abs(q - p)) // (abs(1 - conj(p) * q) -  abs(q - p))
+end
+
+function min_conjugacy_class(c::FreeHomotopyClass)
+    # calculates conjugacy class minimizing the unique geodesic
+    S = surface(c)
+    w = word(c)
+    G =  parent(w)
+    min_classes = SurfaceGeodesic[]
+    conj_class = w
+    
+    for l in letters(w)
+        c = free_homotopy_class(conj_class, S)
+        # 1//2 should eventually imply the mid point of the identified side
+        sg = surface_geodesic(c, QQ(1//2))
+
+        if isempty(min_classes) || length(sg) < length(min_classes[1])
+            min_classes = [sg]
+        elseif length(sg) == length(min_classes[1])
+            push!(min_classes, sg)
+        end
+        
+        conj_class = l > 0 ? conj(conj_class, G[l]) : conj(conj_class, inv(G[-l]))
+    end
+    return min_classes
 end
