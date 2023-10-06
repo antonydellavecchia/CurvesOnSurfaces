@@ -202,7 +202,7 @@ function length(sg::SurfaceGeodesic)
     l = lift(sg)
     p = intersection(geodesic(l), init_geodesic(l))
     q = intersection(geodesic(l), end_geodesic(l))
-c
+
     # since log is monotone increasing, when comparing length we need only compare
     # the following expression
     return (abs(1 - conj(p) * q) + abs(q - p)) // (abs(1 - conj(p) * q) -  abs(q - p))
@@ -237,8 +237,9 @@ end
 mutable struct HalfEdge
     next::Union{HalfEdge, Nothing}
     flip::Union{HalfEdge, Nothing}
-    label:: Pair{Vector{Int}, Vector{Int}}
 end
+
+half_edge() = HalfEdge(nothing, nothing)
 
 function set_next(h::HalfEdge, next::HalfEdge)
     h.next = next
@@ -248,26 +249,51 @@ function set_flip(h::HalfEdge, flip::HalfEdge)
     h.flip = flip
 end
 
-function half_edge(label::Pair{Vector{Int}, Vector{Int}})
-    h = HalfEdge(nothing, nothing, label)
-    f = HalfEdge(nothing, h, reverse(label))
-    set_flip(h, f)
-    return h
-end
-
 function polyhedral_subdivision(sg::SurfaceGeodesic)
     # self intersections are ordered by lines following along the curve
     # keys start at 1 and increase, each value is an ordered list of intersections
     # they are tuples where the second entry is the key to the line they also appear on
-    self_inters = self_intersections
-
-    for i in 1:length(self_inters)
-        for self_inter in self_inters[i]
-            # self inter is the intersection of the line i with some other line
-            inter_label = label(self_inter[1])
-            # j is the index for the self intersection on the other line tha
-            j = self_inter[2]
-            k = findfirst(x -> x[2] == i, self_inters[j])
+    self_inters = self_intersections(sg)
+    
+    function find_next_index(i::Int, j::Int)
+        if i > length(self_inters)
+            return find_next_index(1, 0)
         end
+
+        len_self_inters = length(self_inters[i])
+        if j + 1 <= len_self_inters
+            return (i, j + 1)
+        end
+        
+        return find_next_index(i + 1, 0)
+    end
+
+    half_edges_right = Dict{Pair{Tuple{Int, Int}, Tuple{Int, Int}}, HalfEdge}()
+    half_edges_left = Dict{Pair{Tuple{Int, Int}, Tuple{Int, Int}}, HalfEdge}()
+    cycle = 1
+    while cycle <= 2
+        for i in 1:length(self_inters)
+            for j in 1:length(self_inters[i])
+                next_index = find_next_index(i, j)
+
+                h = half_edge()
+                if cycle == 1
+                    half_edges_right[(i, j) => next_index] = h
+                else
+                    flip = half_edges_right[(i, j) => next_index]
+                    set_flip(flip, h)
+                    set_flip(h, flip)
+                    half_edges_left[next_index => (i, j)] = h
+                end
+                
+                
+                # self inter is the intersection of the line i with some other line
+                inter_label = label(self_inter[1])
+                # j is the index for the self intersection on the other line tha
+                other_line_index = self_inter[2]
+                k = findfirst(x -> x[2] == i, self_inters[other_line_index])
+            end
+        end
+        cycle += 1
     end
 end
