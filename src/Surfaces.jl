@@ -79,35 +79,50 @@ domain_geodesics(sg::SurfaceGeodesic) = sg.domain_geodesics
 surface(sg::SurfaceGeodesic) = surface(free_homotopy_class(sg))
 lift(sg::SurfaceGeodesic) = sg.lift
 
-function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=false)
-    S = surface(c)
-    g1 = init_geodesic(c)
-    g2 = end_geodesic(c)
+function surface_geodesic(class::FreeHomotopyClass;
+                          frac::QQFieldElem = QQ(1//2), check::Bool=false)
+    S = surface(class)
+    g1 = init_geodesic(class)
+    g2 = end_geodesic(class)
 
-    start_angle = (log_pi_i(g1.p2 // g1.p1)) * QQBar(frac) + log_pi_i(g1.p1)
-    start_point = exp_pi_i(start_angle)
+    mid_point = (g1.p2 + g1.p1) // abs(g1.p1 + g1.p2)
+    to_disc_m = moebius([
+        QQBar(1) => g1.p1,
+        QQBar(-1) => g1.p2,
+        QQBar(0) => mid_point
+    ])
+    start_point = on_point(exp_pi_i(QQBar(frac)), to_disc_m)
 
+    mid_point = (g2.p2 + g2.p1) // abs(g2.p1 + g2.p2)
+    to_disc_m = moebius([
+        QQBar(1) => g2.p1,
+        QQBar(-1) => g2.p2,
+        QQBar(0) => mid_point
+    ])
+    end_point = on_point(exp_pi_i(QQBar(frac)), to_disc_m)
+    
     @time "finding moebius for lift" m = moebius([
-        start_point => start_point,
+        start_point => end_point,
         g1.p1 => g2.p2,
         g1.p2 => g2.p1
     ])
 
     # find other fixed point of moebius transformation knowing
     # one (start point) by factoring a monic polynomial
-    QQBarx, x = QQBar["x"]
-    p = x^2 + ((m[2, 2] - m[1, 1]) * x - m[1, 2]) * (QQBar(1) // m[2, 1])
-    @time "dividing" q = divexact(p, (x - start_point))
-    other_fixed_point = -evaluate(q, QQBar(0))
+    b = (m[2, 2] - m[1, 1]) // m[2, 1]
+    c = - m[1, 2] // m[2, 1]
+    root1 = (-b + sqrt(b^2 - 4 * c)) // 2
+    root2 = (-b - sqrt(b^2 - 4 * c)) // 2
 
     if check
-        @req is_zero(evaluate(p, other_fixed_point)) "Couldn't find fixed point"
+        @req on_point(root1, m) == root1 "can't find root"
+        @req on_point(root2, m) == root2 "can't find root"
     end
 
-    main = geodesic(start_point, other_fixed_point)
+    main = geodesic(root1, root2)
     lift = FiniteGeodesic(main, g1, g2)
 
-    w = word(c)
+    w = word(class)
     D = fundamental_domain(universal_cover(S))
     transformations = deck_transformations(D)
     invs = inv_transformations(D)
@@ -138,14 +153,14 @@ function surface_geodesic(c::FreeHomotopyClass, frac::QQFieldElem; check::Bool=f
     dg = DomainGeodesic(fg, copy(current_translate))
     push!(domain_fgs, dg)
 
-    return SurfaceGeodesic(c, lift, domain_fgs)
+    return SurfaceGeodesic(class, lift, domain_fgs)
 end
 
 function self_intersections(sg::SurfaceGeodesic)
-    intersections = DomainIntersection[]
+    intersections = Dict{Int, Vector{Tuple{DomainIntersection, Int}}}()
     dgs = domain_geodesics(sg)
     for (i, dg1) in enumerate(dgs)
-        dg1_intersections = Tuple{DomainIntersection, qqbar}[]
+        dg1_intersections = Tuple{DomainIntersection, Int, qqbar}[]
         dg1_start = init_geodesic(dg1)
         dg1_end = end_geodesic(dg1)
         dg1_geodesic = geodesic(dg1)
@@ -162,13 +177,11 @@ function self_intersections(sg::SurfaceGeodesic)
             end
             
             inter = intersection(dg1_geodesic, geodesic(dg2))
-
             if isnothing(inter)
                 continue
             end
 
             inter -= center
-            
             if compare_angles(s, e) && (compare_angles(inter, s) || compare_angles(e, inter))
                 continue
             end
@@ -177,10 +190,10 @@ function self_intersections(sg::SurfaceGeodesic)
             end
 
             # intersection lies in fundamental domain
-            push!(dg1_intersections, (domain_intersection(dg1, dg2), inter))
+            push!(dg1_intersections, (domain_intersection(dg1, dg2), j, inter))
         end
-        sort!(dg1_intersections; lt=compare_angles, by = x -> x[2], rev = compare_angles(e, s))
-        intersections = vcat(intersections, [dg_inter[1] for dg_inter in dg1_intersections])
+        sort!(dg1_intersections; lt=compare_angles, by = x -> x[3], rev = compare_angles(e, s))
+        intersections[i] = [dg_inter[1:2] for dg_inter in dg1_intersections]
     end
     return intersections
 end
@@ -189,7 +202,7 @@ function length(sg::SurfaceGeodesic)
     l = lift(sg)
     p = intersection(geodesic(l), init_geodesic(l))
     q = intersection(geodesic(l), end_geodesic(l))
-
+c
     # since log is monotone increasing, when comparing length we need only compare
     # the following expression
     return (abs(1 - conj(p) * q) + abs(q - p)) // (abs(1 - conj(p) * q) -  abs(q - p))
@@ -205,8 +218,7 @@ function min_conjugacy_class(c::FreeHomotopyClass)
     
     for l in letters(w)
         c = free_homotopy_class(conj_class, S)
-        # 1//2 should eventually imply the mid point of the identified side
-        sg = surface_geodesic(c, QQ(1//2))
+        sg = surface_geodesic(c)
 
         if isempty(min_classes) || length(sg) < length(min_classes[1])
             min_classes = [sg]
@@ -217,4 +229,45 @@ function min_conjugacy_class(c::FreeHomotopyClass)
         conj_class = l > 0 ? conj(conj_class, G[l]) : conj(conj_class, inv(G[-l]))
     end
     return min_classes
+end
+
+################################################################################
+# Polyhedral Complex
+
+mutable struct HalfEdge
+    next::Union{HalfEdge, Nothing}
+    flip::Union{HalfEdge, Nothing}
+    label:: Pair{Vector{Int}, Vector{Int}}
+end
+
+function set_next(h::HalfEdge, next::HalfEdge)
+    h.next = next
+end
+
+function set_flip(h::HalfEdge, flip::HalfEdge)
+    h.flip = flip
+end
+
+function half_edge(label::Pair{Vector{Int}, Vector{Int}})
+    h = HalfEdge(nothing, nothing, label)
+    f = HalfEdge(nothing, h, reverse(label))
+    set_flip(h, f)
+    return h
+end
+
+function polyhedral_subdivision(sg::SurfaceGeodesic)
+    # self intersections are ordered by lines following along the curve
+    # keys start at 1 and increase, each value is an ordered list of intersections
+    # they are tuples where the second entry is the key to the line they also appear on
+    self_inters = self_intersections
+
+    for i in 1:length(self_inters)
+        for self_inter in self_inters[i]
+            # self inter is the intersection of the line i with some other line
+            inter_label = label(self_inter[1])
+            # j is the index for the self intersection on the other line tha
+            j = self_inter[2]
+            k = findfirst(x -> x[2] == i, self_inters[j])
+        end
+    end
 end

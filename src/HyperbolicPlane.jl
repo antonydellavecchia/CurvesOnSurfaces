@@ -1,5 +1,5 @@
 import Oscar.QQBar
-    
+
 function coordinates(z::qqbar)
     return [real(z), imag(z)]
 end
@@ -12,10 +12,10 @@ function half_angle_coords(angle_coord::qqbar)
     return cos + sqrt(QQBar(-1)) * sin
 end
 
-function on_point(q::qqbar, M::MatElem{qqbar})
+function on_point(q::qqbar, M::MatElem{qqbar}; check::Bool = false)
     z = (M[1, 1] * q + M[1, 2]) // (M[2, 1] * q + M[2, 2])
     
-    if isone(abs(q))
+    if isone(abs(q)) && check
         @req isone(abs(z)) "point was moved off boundary"
     end
     return z
@@ -163,6 +163,17 @@ geodesic(fg::FiniteGeodesic) = fg.g
 init_geodesic(fg::FiniteGeodesic) = fg.g1
 end_geodesic(fg::FiniteGeodesic) = fg.g2
 
+function on_finite_geodesic(fg::FiniteGeodesic, M::MatElem{qqbar}; copy::Bool = true)
+    translated_start = on_geodesic(init_geodesic(fg), M; copy=copy)
+    translated_end = on_geodesic(end_geodesic(fg), M; copy=copy)
+    translated_main = on_geodesic(geodesic(fg), M; copy=copy)
+
+    if copy
+        return FiniteGeodesic(translated_main, translated_start, translated_end)
+    end
+    return fg
+end
+
 ################################################################################
 # DomainGeodesic
 
@@ -181,6 +192,8 @@ struct DomainIntersection
     dg2::DomainGeodesic
     label::Vector{Int} # labelled by their word difference
 end
+
+label(dg::DomainIntersection) = dg.label
 
 function domain_intersection(dg1::DomainGeodesic, dg2::DomainGeodesic)
     # when the first geodesic has the larger translate

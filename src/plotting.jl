@@ -1,6 +1,7 @@
 # defines the global plot precision
 const PLOT_CC = AcbField(15)
 const PLOT_RR = ArbField(15)
+
 function arc(g::T) where T <: Union{FiniteGeodesic, Geodesic}
     if T <: FiniteGeodesic
         c = circle_center(geodesic(g))
@@ -93,52 +94,6 @@ end
         dg.fg
     end
 end
-
-# this plotting function might be useful later
-# @recipe function f(fg::FiniteGeodesic)
-#     r1, _ = arc(fgeodesic(g))
-#     r2, _ = arc(fg.g1)
-#     c1 = circle_center(fgeodesic(g))
-#     c2 = circle_center(fg.g1)
-# 
-#     RR = ArbField(64)
-#     points_1 = Plots.partialcircle(0, 2π, 100, convert(Float64, RR(r1)))
-#     points_2 = Plots.partialcircle(0, 2π, 100, convert(Float64, RR(r2)))
-#     
-#     c1_real = convert(Float64, real(PLOT_CC(c1)))
-#     c1_imag = convert(Float64, imag(PLOT_CC(c1)))
-# 
-#     @series begin
-#         color := :blue
-#         [p .+ (c1_real, c1_imag) for p in points_1]
-#     end
-# 
-#     c2_real = convert(Float64, real(PLOT_CC(c2)))
-#     c2_imag = convert(Float64, imag(PLOT_CC(c2)))
-# 
-#     @series begin
-#         color := :red
-#         [p .+ (c2_real, c2_imag) for p in points_2]
-#     end
-# 
-#     @series begin
-#         color := :deepskyblue
-#         Plots.partialcircle(0, 2π, 100, 1)
-#     end
-# 
-#     l = intersection(fgeodesic(g), fg.g1)
-#     l_real = convert(Float64, real(PLOT_CC(l)))
-#     l_imag = convert(Float64, imag(PLOT_CC(l)))
-# 
-#     @series begin
-#         [(l_real, l_imag),
-#          (0, 0),
-#          (c1_real, c1_imag),
-#          (c2_real, c2_imag),
-#          (0, 0)]
-#     end
-# end
-#
 
 @recipe function f(sg::SurfaceGeodesic)
     @series begin
